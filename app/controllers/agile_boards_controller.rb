@@ -503,10 +503,226 @@ retrieve_query
 
 #test graph gen
  
+##########
+
+# https://www.reddit.com/r/dailyprogrammer/comments/3vey01/20151204_challenge_243_hard_new_york_street/
+class Route
+  attr_reader :score
+
+  def initialize(unswept_street_ids, intersection, target, parent=nil, score=0)
+    @unswept_street_ids = unswept_street_ids
+    @intersection       = intersection
+    @target             = target
+    @parent             = parent
+    @score              = score
+  end
+
+  def current_intersection
+    @intersection
+  end
+
+  def +(intersection)
+    street_id = to_id(current_intersection, intersection)
+
+    if @unswept_street_ids.include? street_id
+      Route.new @unswept_street_ids - [street_id],
+                intersection,
+                @target,
+                self,
+                @score+10 - 1
+    else
+      Route.new @unswept_street_ids,
+                intersection,
+                @target,
+                self,
+                @score-1
+    end
+  end
+
+  def <(other)
+    score < other.score
+  end
+
+  def winner?
+    @unswept_street_ids.empty? && current_intersection == @target
+  end
+
+  def inspect
+    "#<Route #{score} #{each.to_a.join '-'} {#{@unswept_street_ids.join ' '}}>"
+  end
+
+  def each(&block)
+    return to_enum :each unless block
+    @parent.each(&block) if @parent
+    block.call current_intersection
+    self
+  end
+
+  private
+
+  def to_id(i1, i2)
+    if i1 < i2
+      :"#{i1}#{i2}"
+    else
+      :"#{i2}#{i1}"
+    end
+  end
+end
+
+
+def streets_for(raw_graph)
+  raw_graph = raw_graph.each_line.map do |line|
+    line.chars.reject.with_index { |_char, x| x % 2 == 1 }.map { |char| char.intern if char != ' ' }
+  end
+  # [[:A, :-, :B, :-, :C],
+  #  [:|, nil, :|, nil, :v],
+  #  [:D, :>, :E, :-, :F],
+  #  [:^, nil, :v, nil, :v],
+  #  [:G, :-, :H, :<, :I]]
+
+  streets = raw_graph                               # [[:A, :-, :B, :-, :C], [:|, nil, :|, nil, :v], [:D, :>, :E, :-, :F], [:^, nil, :v, nil, :v], [:G, :-, :H, :<, :I]]
+              .flat_map { |row| row.grep /[A-Z]/ }  # [:A, :B, :C, :D, :E, :F, :G, :H, :I]
+              .sort.map { |name| [name, []] }       # [[:A, []], [:B, []], [:C, []], [:D, []], [:E, []], [:F, []], [:G, []], [:H, []], [:I, []]]
+              .to_h                                 # {:A=>[], :B=>[], :C=>[], :D=>[], :E=>[], :F=>[], :G=>[], :H=>[], :I=>[]}
+
+  raw_graph.each_with_index do |row, y|
+    row.each_with_index do |cell, x|
+      next if cell !~ /[-|v^<>]/
+      streets[raw_graph[y-1][x]] << raw_graph[y+1][x] if cell == :| || cell == :v
+      streets[raw_graph[y+1][x]] << raw_graph[y-1][x] if cell == :| || cell == :^
+      streets[raw_graph[y][x+1]] << raw_graph[y][x-1] if cell == :- || cell == :<
+      streets[raw_graph[y][x-1]] << raw_graph[y][x+1] if cell == :- || cell == :>
+    end
+  end
+
+  streets
+  # {:A=>[:B, :D],
+  #  :B=>[:A, :C, :E],
+  #  :C=>[:B, :F],
+  #  :D=>[:A, :E],
+  #  :E=>[:B, :F, :H],
+  #  :F=>[:E, :I],
+  #  :G=>[:D, :H],
+  #  :H=>[:G],
+  #  :I=>[:H]}
+end
+
+
+def street_ids_for(streets)
+  street_ids = streets.flat_map { |from, tos|
+    tos.map { |to| [from, to].sort.join.intern }
+  }.uniq.sort
+  # [:AB, :AD, :BC, :BE, :CF, :DE, :DG, :EF, :EH, :FI, :GH, :HI]
+end
+
+def shortest_total_path(streets:, start:, finish:)
+  routes = [Route.new(street_ids_for(streets), start, finish)]
+  winner = nil
+
+  loop do
+    route = routes.pop # the routes we considered
+    # => #<Route 0 F {AB AD BC BE CF DE DG EF EH FI GH HI}>
+    #    ,#<Route 9 F-I {AB AD BC BE CF DE DG EF EH GH HI}>
+    #    ,#<Route 18 F-I-H {AB AD BC BE CF DE DG EF EH GH}>
+    #    ,#<Route 27 F-I-H-G {AB AD BC BE CF DE DG EF EH}>
+    #    ,#<Route 36 F-I-H-G-D {AB AD BC BE CF DE EF EH}>
+    #    ,#<Route 45 F-I-H-G-D-E {AB AD BC BE CF EF EH}>
+    #    ,#<Route 54 F-I-H-G-D-E-H {AB AD BC BE CF EF}>
+    #    ,#<Route 54 F-I-H-G-D-E-F {AB AD BC BE CF EH}>
+    #    ,#<Route 54 F-I-H-G-D-E-B {AB AD BC CF EF EH}>
+    #    ,#<Route 63 F-I-H-G-D-E-B-C {AB AD CF EF EH}>
+    #    ,#<Route 72 F-I-H-G-D-E-B-C-F {AB AD EF EH}>
+    #    ,#<Route 81 F-I-H-G-D-E-B-C-F-E {AB AD EH}>
+    #    ,#<Route 90 F-I-H-G-D-E-B-C-F-E-H {AB AD}>
+    #    ,#<Route 89 F-I-H-G-D-E-B-C-F-E-H-G {AB AD}>
+    #    ,#<Route 88 F-I-H-G-D-E-B-C-F-E-H-G-H {AB AD}>
+    #    ,#<Route 88 F-I-H-G-D-E-B-C-F-E-H-G-D {AB AD}>
+    #    ,#<Route 97 F-I-H-G-D-E-B-C-F-E-H-G-D-A {AB}>
+    #    ,#<Route 106 F-I-H-G-D-E-B-C-F-E-H-G-D-A-B {}>
+    #    ,#<Route 105 F-I-H-G-D-E-B-C-F-E-H-G-D-A-B-E {}>
+
+    new_routes = streets[route.current_intersection]
+                   .map { |to_street| route + to_street }
+
+    break if winner = new_routes.find(&:winner?)
+
+    new_routes.each do |new_route|
+      prev_i = routes.length - 1
+      prev_i -= 1 while 0 <= prev_i && new_route < routes[prev_i]
+      routes.insert prev_i+1, new_route
+    end
+  end
+
+  routes.reverse # the priority queue of routes to try next
+  # => [#<Route 105 F-I-H-G-D-E-B-C-F-E-H-G-D-A-B-C {}>,
+  #     #<Route 105 F-I-H-G-D-E-B-C-F-E-H-G-D-A-B-A {}>,
+  #     #<Route 96 F-I-H-G-D-E-B-C-F-E-H-G-D-A-D {AB}>,
+  #     #<Route 87 F-I-H-G-D-E-B-C-F-E-H-G-D-E {AB AD}>,
+  #     #<Route 87 F-I-H-G-D-E-B-C-F-E-H-G-H-G {AB AD}>,
+  #     #<Route 80 F-I-H-G-D-E-B-C-F-E-F {AB AD EH}>,
+  #     #<Route 80 F-I-H-G-D-E-B-C-F-E-B {AB AD EH}>,
+  #     #<Route 71 F-I-H-G-D-E-B-C-F-I {AB AD EF EH}>,
+  #     #<Route 63 F-I-H-G-D-E-B-A {AD BC CF EF EH}>,
+  #     #<Route 62 F-I-H-G-D-E-B-C-B {AB AD CF EF EH}>,
+  #     #<Route 53 F-I-H-G-D-E-B-E {AB AD BC CF EF EH}>,
+  #     #<Route 53 F-I-H-G-D-E-F-I {AB AD BC BE CF EH}>,
+  #     #<Route 53 F-I-H-G-D-E-F-E {AB AD BC BE CF EH}>,
+  #     #<Route 53 F-I-H-G-D-E-H-G {AB AD BC BE CF EF}>,
+  #     #<Route 45 F-I-H-G-D-A {AB BC BE CF DE EF EH}>,
+  #     #<Route 26 F-I-H-G-H {AB AD BC BE CF DE DG EF EH}>,
+  #     #<Route 9 F-E {AB AD BC BE CF DE DG EH FI GH HI}>]
+
+  winner
+end
+
+
+
+public
+  def gena
+	
+
+start = :F
+raw_graph = <<GRAPH
+A - B - C
+|   |   v
+D > E - F
+^   v   v
+G - H < I
+GRAPH
+
+streets = streets_for raw_graph
+# => {:A=>[:B, :D],
+#     :B=>[:A, :C, :E],
+#     :C=>[:B, :F],
+#     :D=>[:A, :E],
+#     :E=>[:B, :F, :H],
+#     :F=>[:E, :I],
+#     :G=>[:D, :H],
+#     :H=>[:G],
+#     :I=>[:H]}
+
+res = shortest_total_path streets: streets, start: :F, finish: :F
+# => #<Route 104 F-I-H-G-D-E-B-C-F-E-H-G-D-A-B-E-F {}>
 
 
 
 
+   out_str = ""
 
+res.each do |key, value|
+	out_str += key.to_s + "</br>"
+end
+
+
+
+
+    #вывод в стиле php echo (антипаттерн)
+    render html: out_str.html_safe
+
+
+  end
+
+
+##########
 
 end

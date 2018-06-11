@@ -49,6 +49,7 @@ get '/agile/charts/select_version_chart', :to => "agile_charts#select_version_ch
 get '/projects/:project_id/agile/board', :to => 'agile_boards#index'
 get '/agile/board', :to => 'agile_boards#index'
 get '/agile/bpmn', :to => 'agile_boards#bpmn'
+get '/agile/gena', :to => 'agile_boards#gena'
 put '/agile/board', :to => 'agile_boards#update', :as => 'update_agile_board'
 get '/agile/issue_tooltip', :to => 'agile_boards#issue_tooltip', :as => 'issue_tooltip'
 get '/agile/inline_comment', :to => 'agile_boards#inline_comment', :as => 'agile_inline_comment'
