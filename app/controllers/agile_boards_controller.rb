@@ -678,19 +678,47 @@ end
 
 
 public
-  def gena
+ def gena
 	
+#открыть базу
+ db = SQLite3::Database.open "/usr/share/redmine/plugins/redmine_agile/redminedb.sqlite3"
 
-start = :F
-raw_graph = <<GRAPH
-A - B - C
-|   |   v
-D > E - F
-^   v   v
-G - H < I
-GRAPH
+#получить текущий проект
+ project_id = 1
 
-streets = streets_for raw_graph
+#граф улиц для задачи
+stritz = { }
+
+
+#выбрать все узлы проекта 
+ sth = db.prepare "SELECT element_id, sourceref FROM line_scheme WHERE project_id = " + project_id.to_s  + ";"
+ sources = sth.execute
+ sources.each do |source_element|
+  #само название задачи
+  node_name = source_element[1].to_s
+  #список связанных вершин - задач
+  nodez = []
+  #для каждого узла найти, с кем он связан
+   sth_child = db.prepare "SELECT element_id, targetref FROM line_scheme WHERE project_id = " + project_id.to_s  + " and sourceref=\"" + node_name + "\";"
+   targets = sth_child.execute
+   #и пройтись по ним
+   targets.each do |target_element|
+     #добавить связанный элемент в список
+     nodez.push(target_element[1].to_s)
+   end #обход всех целей
+  #добавочка в мап
+  stritz[node_name] = nodez
+ end #обход всех источников
+
+
+#на выходе stritz содержит мапу связи {вершина=>ее связи}
+
+#fix
+stritz["EndEvent_1"] = []
+
+
+#пример исходной мапы для поиска 
+#streets
 # => {:A=>[:B, :D],
 #     :B=>[:A, :C, :E],
 #     :C=>[:B, :F],
@@ -701,15 +729,16 @@ streets = streets_for raw_graph
 #     :H=>[:G],
 #     :I=>[:H]}
 
-res = shortest_total_path streets: streets, start: :F, finish: :F
-# => #<Route 104 F-I-H-G-D-E-B-C-F-E-H-G-D-A-B-E-F {}>
+#вернуть узлы кратчайшим путем
+#res = shortest_total_path streets: streets, start: :F, finish: :F
+res = shortest_total_path streets: stritz, start: "StartEvent_15", finish: "EndEvent_1"
 
 
+#дальше поидее вывод поэлементно в xml
 
+ out_str = ""
 
-   out_str = ""
-
-res.each do |key, value|
+ res.each do |key, value|
 	out_str += key.to_s + "</br>"
 end
 
