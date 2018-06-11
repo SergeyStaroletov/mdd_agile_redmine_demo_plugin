@@ -85,6 +85,7 @@ retrieve_query
   #end
  #end
 
+   out_str = ""    
     
     
    project_id = 1   ##научиться получать id проекта
